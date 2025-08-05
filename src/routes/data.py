@@ -1,5 +1,5 @@
 # Import necessary FastAPI modules and helpers
-from fastapi import FastAPI, APIRouter, Depends, UploadFile, status
+from fastapi import FastAPI, APIRouter, Depends, UploadFile, status, Request
 from fastapi.responses import JSONResponse
 import os
 import aiofiles
@@ -7,10 +7,15 @@ import logging
 
 # Import application settings and controllers
 from helpers.config import get_settings, Settings
+# Import controllers for handling project and data operations
 from controllers.ProjectController import ProjectController
 from controllers.ProcessController import ProcessController
 from controllers.DataController import DataController
+# Import models and schemas
 from models import ResponseSignal
+from models.ProjectModel import ProjectModel
+from models.ChunkModel import ChunkModel
+from models.db_schemes import DataChunk
 from .schemes.data import ProcessRequest
 
 
@@ -27,13 +32,21 @@ data_router = APIRouter(
 # ----------------------------------------------
 
 @data_router.post("/upload/{project_id}")
-async def upload_data(project_id: str, file: UploadFile,
+async def upload_data(request: Request, project_id: str, file: UploadFile,
                       app_settings: Settings = Depends(get_settings)):
     
     
+    # Validate the project ID
+    project_model = ProjectModel(
+        db_client=request.app.db_client
+    )
+    
+    # Check if the project exists or create a new one
+    project = await project_model.get_project_or_create_one(
+        project_id=project_id
+    )
     
     # Validate file properties
-    
     data_controller = DataController()
     
     is_valid, result_signal = await data_controller.validate_upload_file(file=file)
@@ -70,13 +83,14 @@ async def upload_data(project_id: str, file: UploadFile,
                 "Signal": ResponseSignal.FILE_UPLOAD_FAILED.value,
             }
         )
-            
+    
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={
-            "Signal": ResponseSignal.FILE_UPLOAD_SUCCESS.value,
-            "File ID": file_id,
-            "File Path": file_path
+            "Signal": ResponseSignal.FILE_UPLOAD_SUCCESS.value, # Indicate successful upload
+            "File ID": file_id, # Unique identifier for the uploaded file
+            "File Path": file_path, # Path where the file is saved
+            
         }
     )
     
@@ -85,17 +99,31 @@ async def upload_data(project_id: str, file: UploadFile,
 # ----------------------------------------------
 
 @data_router.post("/process/{project_id}")
-async def process_data(project_id: str, process_request: ProcessRequest):
+async def process_data(request: Request, project_id: str, process_request: ProcessRequest):
     
     # Validate the project ID
     file_id = process_request.file_id
     chunk_size = process_request.chunk_size
     overlap_size = process_request.overlap_size
+    do_reset = process_request.do_reset
+    
+    
+    # Check if the project exists or create a new one
+    project_model = ProjectModel(
+        db_client = request.app.db_client
+    )
+    
+    # Get or create the project
+    project = await project_model.get_project_or_create_one(
+        project_id=project_id
+    )
     
     process_controller = ProcessController(project_id=project_id)
     
+    # Get the content of the file to be processed
     file_content = process_controller.get_file_content(file_id=file_id)
     
+    # Process file into text chunks
     file_chunks = process_controller.process_file_content(
         file_content=file_content,
         file_id=file_id,
@@ -111,5 +139,46 @@ async def process_data(project_id: str, process_request: ProcessRequest):
                 "Signal": ResponseSignal.FILE_NOT_FOUND.value
             }
         )
+        
+     # Insert processed chunks into the database
+    file_chunks_records = [
+        DataChunk(
+            chunk_text=chunk.page_content,
+            chunk_metadata=chunk.metadata,
+            chunk_order=i+1,  # Start order from 1
+            chunk_project_id=project.id,
+        )
+        # Use enumerate to get both index and chunk
+        for i, chunk in enumerate(file_chunks)
+    ]
     
-    return file_chunks
+    # Create a ChunkModel instance to handle database operations
+    chunk_model = ChunkModel(
+        db_client=request.app.db_client
+    )
+    
+    # If do_reset is set, delete existing chunks for the project
+    if do_reset == 1:
+        deleted_count = await chunk_model.delete_chunks_by_project_id(project_id=project.id)
+    else:
+        deleted_count = 0
+    
+    
+    #Insert the file chunks into the database
+    no_records = await chunk_model.insert_many_chunks(
+        chunks=file_chunks_records
+    )
+    
+    # Return a JSON response indicating success
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content={
+            "Signal": ResponseSignal.FILE_PROCESSING_SUCCESS.value,  # Indicate successful processing
+            "File ID": file_id,  # ID of the processed file
+            "Project ID": project_id,  # ID of the project being processed
+            "Inserted Chunks": no_records,  # Number of records inserted
+            "Deleted Chunks": deleted_count, # Number of chunks deleted if do_reset was set
+        }
+    )
+    
+    

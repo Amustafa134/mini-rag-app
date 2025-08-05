@@ -38,6 +38,7 @@ class ProcessController(BaseController):
         if file_ext == ProcessingEnum.PDF.value:
             return PyMuPDFLoader(file_path)
         print(f"Unsupported file type: {file_ext}")
+        
         return None  # Unsupported file type
     
     # Method to get the content of a file by its ID
