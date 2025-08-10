@@ -37,7 +37,7 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
     
     
     # Validate the project ID
-    project_model = ProjectModel(
+    project_model = await ProjectModel.create_instance(
         db_client=request.app.db_client
     )
     
@@ -49,7 +49,7 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
     # Validate file properties
     data_controller = DataController()
     
-    is_valid, result_signal = await data_controller.validate_upload_file(file=file)
+    is_valid, result_signal = data_controller.validate_upload_file(file=file)
     
     if not is_valid:
         return JSONResponse(
@@ -102,14 +102,14 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
 async def process_data(request: Request, project_id: str, process_request: ProcessRequest):
     
     # Validate the project ID
-    file_id = process_request.file_id
+    #file_id = process_request.file_id
     chunk_size = process_request.chunk_size
     overlap_size = process_request.overlap_size
     do_reset = process_request.do_reset
     
     
     # Check if the project exists or create a new one
-    project_model = ProjectModel(
+    project_model = await ProjectModel.create_instance(
         db_client = request.app.db_client
     )
     
@@ -153,7 +153,7 @@ async def process_data(request: Request, project_id: str, process_request: Proce
     ]
     
     # Create a ChunkModel instance to handle database operations
-    chunk_model = ChunkModel(
+    chunk_model = await ChunkModel.create_instance(
         db_client=request.app.db_client
     )
     
