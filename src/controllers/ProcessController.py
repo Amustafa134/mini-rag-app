@@ -30,6 +30,10 @@ class ProcessController(BaseController):
             self.project_path,
             file_id
         )
+        
+        if not os.path.exists(file_path):
+            return None
+        
         print(f"Unsupported file type: {file_ext}")
         if file_ext == ProcessingEnum.TXT.value:
             # For text files, use TextLoader
@@ -45,7 +49,10 @@ class ProcessController(BaseController):
     def get_file_content(self, file_id: str):
         
         loader = self.get_file_loader(file_id=file_id)
-        return loader.load()
+        if loader:
+            return loader.load()
+        
+        return None
     
     def process_file_content(self, file_content: list, file_id: str,
                              chunk_size: int=100 , overlap_size: int=20):
