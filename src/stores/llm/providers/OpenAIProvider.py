@@ -1,5 +1,5 @@
-from LLMInterface import LLMInterface
-from LLMEnums import OpenAIEnums
+from stores.llm.LLMInterface import LLMInterface
+from stores.llm.LLMEnums import OpenAIEnums
 from openai import OpenAI
 import logging
 
@@ -25,7 +25,8 @@ class OpenAIProvider(LLMInterface):
         
         self.client = OpenAI(
             api_key = self.api_key,
-            api_url = self.api_url
+            base_url=self.api_url if self.api_url else None
+            #api_url = self.api_url
         )
         
         self.logger = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ class OpenAIProvider(LLMInterface):
             self.logger.error("Error while generating text with OpenAI")
             return None
         
-        return response.choices[0].message["content"]
+        return response.choices[0].message.content
     
     
     def embed_text(self, text: str, document_type: str = None):
